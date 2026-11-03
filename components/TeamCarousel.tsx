@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { ThemeMode } from '@/components/Header';
 
 interface TeamCarouselProps {
@@ -73,11 +74,12 @@ export const TeamCarousel: React.FC<TeamCarouselProps> = ({ theme = 'light' }) =
                 className={`flex-shrink-0 ${sizeClasses}`}
               >
                  <div className={`w-full h-full rounded-2xl overflow-hidden relative shadow-xl bg-black/20 ${isDark ? 'border border-[#333333]' : 'border border-[#b2b2b2]/20'}`}>
-                    <img 
+                    <Image 
                       src={member.src}
-                      className="object-cover w-full h-full" 
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }} 
+                      fill
+                      className="object-cover" 
                       alt="Equipo Itiers"
+                      sizes="(max-width: 768px) 240px, 480px"
                     />
                  </div>
               </div>
