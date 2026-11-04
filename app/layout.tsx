@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import { Comfortaa, Nunito } from 'next/font/google';
+import Script from 'next/script';
 import { JsonLd } from '@/components/JsonLd';
 import './globals.css';
+
+// Google Tag Manager ID
+const GTM_ID = 'GTM-W54KXZZK';
 
 const comfortaa = Comfortaa({
   subsets: ['latin'],
@@ -104,9 +108,36 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${comfortaa.variable} ${nunito.variable}`}>
       <head>
+        {/* Google Tag Manager */}
+        <Script
+          id="gtm-script"
+          strategy="afterInteractive"
+          src={`https://www.googletagmanager.com/gtm.js?id=${GTM_ID}`}
+        />
+        <Script
+          id="gtm-dataLayer"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+            `,
+          }}
+        />
         <JsonLd />
       </head>
       <body className="antialiased">
+        {/* Google Tag Manager (noscript) - fallback para navegadores sin JS */}
+        <noscript>
+          <iframe
+            src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
+            height="0"
+            width="0"
+            style={{ display: 'none', visibility: 'hidden' }}
+            title="Google Tag Manager"
+          />
+        </noscript>
         {children}
       </body>
     </html>
