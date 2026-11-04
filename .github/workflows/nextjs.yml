@@ -72,7 +72,7 @@ jobs:
         # - Con subdirectorio (itiers.github.io/itiers-landing): usar '/itiers-landing'
         # - Con dominio custom (www.itiers.com): cambiar a '' (vacio) o borrar la linea
         env:
-          DEPLOY_BASE_PATH: '/itiers-landing'
+          DEPLOY_BASE_PATH: ''
         run: ${{ steps.detect-package-manager.outputs.runner }} next build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
