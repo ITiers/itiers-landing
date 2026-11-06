@@ -98,7 +98,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
     setErrorMessage('');
     setFieldErrors({});
 
-    // Validación mediante Guardrails Zod
+    // Validación estricta con Guardrails Zod
     const validation = ContactFormSchema.safeParse({
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -125,25 +125,44 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
     setStatus('submitting');
 
     try {
-      const response = await fetch(`https://formsubmit.co/ajax/${INFO_ITIERS.email}`, {
+      const accessKey = process.env.NEXT_PUBLIC_WEB3FORMS_KEY || 'd5ccd62c-0d47-42ed-91ca-02bf1e56dc65';
+      
+      const payload = currentLang === 'es'
+        ? {
+            access_key: accessKey,
+            from_name: 'Itiers Data Sense',
+            replyto: formData.email.trim(),
+            subject: `Nuevo contacto web: ${formData.name.trim()} (${formData.service})`,
+            'Nombre y Apellido': formData.name.trim(),
+            'Correo Electrónico': formData.email.trim(),
+            'Empresa': formData.company.trim() || 'No especificada',
+            'Tipo de Solución': formData.service,
+            'Mensaje': formData.message.trim(),
+          }
+        : {
+            access_key: accessKey,
+            from_name: 'Itiers Data Sense',
+            replyto: formData.email.trim(),
+            subject: `New web inquiry: ${formData.name.trim()} (${formData.service})`,
+            'Full Name': formData.name.trim(),
+            'Email Address': formData.email.trim(),
+            'Company': formData.company.trim() || 'Not specified',
+            'Type of Solution': formData.service,
+            'Message': formData.message.trim(),
+          };
+
+      const response = await fetch('https://api.web3forms.com/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({
-          Nombre: formData.name.trim(),
-          Email: formData.email.trim(),
-          Empresa: formData.company.trim() || 'No especificada',
-          'Tipo de Solución': formData.service,
-          Mensaje: formData.message.trim(),
-          _subject: `Nuevo contacto web: ${formData.name.trim()} (${formData.service})`,
-          _replyto: formData.email.trim(),
-          _template: 'table',
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
+      const data = await response.json();
+
+      if (data.success) {
         setStatus('success');
         setFormData({
           name: '',
@@ -154,7 +173,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
         });
       } else {
         setStatus('error');
-        setErrorMessage(content.form.errorMessage);
+        setErrorMessage(data.message || content.form.errorMessage);
       }
     } catch {
       setStatus('error');
@@ -190,7 +209,11 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
           <div className={`lg:col-span-7 rounded-none p-8 sm:p-12 shadow-2xl border transition-colors duration-300 ${
             isDark ? 'bg-[#212121] border-[#333333]' : 'bg-white border-transparent'
           }`}>
-            <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+            <form 
+              onSubmit={handleSubmit} 
+              className="space-y-6" 
+              noValidate
+            >
               
               {status === 'success' && (
                 <div className="p-4 bg-green-500/10 border border-green-500/30 text-green-600 dark:text-green-400 text-sm font-semibold rounded-none">
