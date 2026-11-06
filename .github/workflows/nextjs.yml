@@ -74,6 +74,8 @@ jobs:
         env:
           DEPLOY_BASE_PATH: ''
         run: ${{ steps.detect-package-manager.outputs.runner }} next build
+      - name: Ensure .nojekyll exists
+        run: touch ./out/.nojekyll
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

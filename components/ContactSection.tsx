@@ -213,14 +213,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
 
   return (
     <section id="contacto" className="py-24 relative overflow-hidden bg-[#161616]" aria-labelledby="contacto-heading">
-      
+
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <div className="absolute top-1/2 -translate-y-1/2 -left-40 w-[45rem] h-[45rem] bg-[#ff4f00] rounded-full blur-[200px] opacity-[0.12]"></div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-start">
-          
+
           {/* Columna Izquierda: Información Corporativa */}
           <div className="lg:col-span-5 text-left pt-6 lg:pt-0">
             <span className="text-[#ff4f00] text-xs font-bold uppercase tracking-widest mb-4 block">
@@ -275,10 +275,9 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
           </div>
 
           {/* Columna Derecha: Formulario Interactivo */}
-          <div className={`lg:col-span-7 rounded-none p-8 sm:p-12 shadow-2xl border transition-colors duration-300 ${
-            isDark ? 'bg-[#212121] border-[#333333]' : 'bg-white border-transparent'
-          }`}>
-            
+          <div className={`lg:col-span-7 rounded-none p-8 sm:p-12 shadow-2xl border transition-colors duration-300 ${isDark ? 'bg-[#212121] border-[#333333]' : 'bg-white border-transparent'
+            }`}>
+
             {status === 'success' ? (
               <div className="py-8 text-center space-y-4" role="status" aria-live="polite">
                 <div className="w-16 h-16 mx-auto bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-3xl font-bold">
@@ -302,7 +301,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-                
+
                 {errorMessage && (
                   <div
                     className="p-4 bg-red-500/10 border border-red-500/30 text-red-500 text-sm rounded-none"
@@ -325,9 +324,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                   <div>
                     <label
                       htmlFor="contact-name"
-                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${
-                        isDark ? 'text-gray-300' : 'text-slate-500'
-                      }`}
+                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${isDark ? 'text-gray-300' : 'text-slate-500'
+                        }`}
                     >
                       {content.form.name} *
                     </label>
@@ -339,9 +337,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                       value={formData.name}
                       onChange={handleInputChange}
                       placeholder={content.form.namePlaceholder}
-                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${
-                        fieldErrors.name ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
-                      } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
+                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${fieldErrors.name ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
+                        } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
                     />
                     {fieldErrors.name && (
                       <span className="text-red-500 text-xs mt-1 block">{fieldErrors.name}</span>
@@ -352,9 +349,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                   <div>
                     <label
                       htmlFor="contact-email"
-                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${
-                        isDark ? 'text-gray-300' : 'text-slate-500'
-                      }`}
+                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${isDark ? 'text-gray-300' : 'text-slate-500'
+                        }`}
                     >
                       {content.form.email} *
                     </label>
@@ -366,9 +362,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                       value={formData.email}
                       onChange={handleInputChange}
                       placeholder={content.form.emailPlaceholder}
-                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${
-                        fieldErrors.email ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
-                      } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
+                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${fieldErrors.email ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
+                        } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
                     />
                     {fieldErrors.email && (
                       <span className="text-red-500 text-xs mt-1 block">{fieldErrors.email}</span>
@@ -381,9 +376,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                   <div>
                     <label
                       htmlFor="contact-company"
-                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${
-                        isDark ? 'text-gray-300' : 'text-slate-500'
-                      }`}
+                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${isDark ? 'text-gray-300' : 'text-slate-500'
+                        }`}
                     >
                       {content.form.company}
                     </label>
@@ -394,9 +388,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                       value={formData.company}
                       onChange={handleInputChange}
                       placeholder={content.form.companyPlaceholder}
-                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${
-                        isDark ? 'bg-[#161616] border-[#333333] text-white' : 'bg-white border-gray-200 text-gray-800'
-                      }`}
+                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${isDark ? 'bg-[#161616] border-[#333333] text-white' : 'bg-white border-gray-200 text-gray-800'
+                        }`}
                     />
                   </div>
 
@@ -404,9 +397,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                   <div>
                     <label
                       htmlFor="contact-service"
-                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${
-                        isDark ? 'text-gray-300' : 'text-slate-500'
-                      }`}
+                      className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${isDark ? 'text-gray-300' : 'text-slate-500'
+                        }`}
                     >
                       {content.form.service} *
                     </label>
@@ -416,9 +408,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                       required
                       value={formData.service}
                       onChange={handleInputChange}
-                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${
-                        fieldErrors.serviceOfInterest ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
-                      } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-slate-700'}`}
+                      className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm ${fieldErrors.serviceOfInterest ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
+                        } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-slate-700'}`}
                     >
                       {content.form.options.map((opt, i) => (
                         <option
@@ -442,9 +433,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                 <div>
                   <label
                     htmlFor="contact-message"
-                    className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${
-                      isDark ? 'text-gray-300' : 'text-slate-500'
-                    }`}
+                    className={`block text-[11px] font-bold mb-2 uppercase tracking-wider transition-colors ${isDark ? 'text-gray-300' : 'text-slate-500'
+                      }`}
                   >
                     {content.form.message} *
                   </label>
@@ -456,9 +446,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ currentLang, the
                     value={formData.message}
                     onChange={handleInputChange}
                     placeholder={content.form.messagePlaceholder}
-                    className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm resize-none ${
-                      fieldErrors.message ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
-                    } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
+                    className={`w-full px-4 py-3.5 rounded-none border focus:outline-none focus:ring-2 focus:ring-[#ff4f00] focus:border-transparent transition-colors text-sm resize-none ${fieldErrors.message ? 'border-red-500' : isDark ? 'border-[#333333]' : 'border-gray-200'
+                      } ${isDark ? 'bg-[#161616] text-white' : 'bg-white text-gray-800'}`}
                   ></textarea>
                   {fieldErrors.message && (
                     <span className="text-red-500 text-xs mt-1 block">{fieldErrors.message}</span>
