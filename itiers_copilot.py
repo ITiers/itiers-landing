@@ -2,11 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-ITIERS AI HARNESS COPILOT — DESKTOP APPLICATION & UI
-=============================================================================
-Interfaz gráfica de escritorio moderna estilo 'ChatGPT para Itiers'.
-Conecta directamente el motor de Harness de Stefano Ferro con Gemini 3.5 Flash,
-Groq y Ollama, permitiendo auditar, auto-reparar y chatear con una UI visual.
+ITIERS AI HARNESS COPILOT
 =============================================================================
 """
 
@@ -16,510 +12,604 @@ import json
 import glob
 import time
 import shutil
+import socket
 import urllib.parse
 import subprocess
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Importar el motor central del arnés
+if sys.platform == "win32":
+    try:
+        if sys.stdout:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from harness_engine import HarnessAgent
 
 PORT = 8765
 HOST = "127.0.0.1"
+DEV_PORT = 3000
 
-# Instancia global del arnés
 agent = HarnessAgent()
+dev_process = None
+
+HISTORY_FILE = ".copilot_chats.json"
+
+def load_chats_db():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    default_id = str(int(time.time()))
+    return {
+        "active_id": default_id,
+        "chats": {
+            default_id: {
+                "title": "Chat Inicial",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "text": "¡Hola! Selecciona un archivo en la barra lateral para comenzar. Puedo agregar imágenes, carruseles, formularios, modificar colores, tipografías y lo que necesites en el código."
+                    }
+                ]
+            }
+        }
+    }
+
+def save_chats_db(db):
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+chats_db = load_chats_db()
+
+def is_port_3000_open():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.4)
+            return s.connect_ex(('127.0.0.1', DEV_PORT)) == 0
+    except Exception:
+        return False
+
+def start_dev_server():
+    global dev_process
+    if is_port_3000_open():
+        return True, "El servidor local ya estaba activo en http://localhost:3000."
+    try:
+        dev_process = subprocess.Popen("npm run dev", shell=True)
+        for _ in range(30):
+            time.sleep(0.5)
+            if is_port_3000_open():
+                return True, "Servidor Next.js iniciado con éxito en http://localhost:3000."
+        return False, "El servidor tardó más de 15 segundos en responder."
+    except Exception as e:
+        return False, f"Error al ejecutar npm run dev: {e}"
+
+def stop_dev_server():
+    global dev_process
+    if dev_process:
+        try:
+            subprocess.run(f"taskkill /F /T /PID {dev_process.pid}", shell=True, capture_output=True)
+        except Exception:
+            pass
+        dev_process = None
+    return True, "Servidor local detenido."
 
 HTML_PAGE = """<!DOCTYPE html>
-<html lang="es" class="dark">
+<html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Itiers AI Copilot — Suite de Harness & QA</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace']
-          },
-          colors: {
-            brand: {
-              orange: '#ff4f00',
-              hover: '#e04500',
-              dark: '#0A0A0A',
-              card: '#141414',
-              surface: '#1E1E1E',
-              border: '#2A2A2A',
-              muted: '#888888'
-            }
-          }
-        }
-      }
-    }
-  </script>
   <style>
-    /* Custom Scrollbars */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #0A0A0A; }
-    ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 9999px; }
-    ::-webkit-scrollbar-thumb:hover { background: #444444; }
-    pre { white-space: pre-wrap; word-break: break-word; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    body { background-color: #0A0A0A; color: #E5E7EB; height: 100vh; display: flex; overflow: hidden; }
+    
+    sidebar { width: 320px; background-color: #121212; border-right: 1px solid #2A2A2A; display: flex; flex-direction: column; justify-content: space-between; flex-shrink: 0; z-index: 20; }
+    main { flex: 1; display: flex; flex-direction: column; height: 100%; background-color: #0A0A0A; position: relative; }
+    
+    .brand-header { padding: 16px; border-bottom: 1px solid #2A2A2A; display: flex; align-items: center; justify-content: space-between; }
+    .brand-left { display: flex; align-items: center; gap: 12px; }
+    .brand-logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #ff4f00, #b33600); display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: 14px; box-shadow: 0 4px 12px rgba(255,79,0,0.3); }
+    .brand-title { font-size: 14px; font-weight: 700; color: white; display: flex; align-items: center; gap: 6px; }
+    .brand-tag { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: rgba(255,79,0,0.2); color: #ff4f00; border: 1px solid rgba(255,79,0,0.3); font-weight: 600; }
+    
+    .new-chat-btn { background: #ff4f00; border: none; border-radius: 8px; width: 32px; height: 32px; color: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .new-chat-btn:hover { background: #e04500; }
+
+    .widget-box { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .widget-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #9CA3AF; display: block; margin-bottom: 6px; }
+    
+    .target-btn { width: 100%; background: #181818; border: 1px solid #2A2A2A; border-radius: 12px; padding: 10px 12px; font-size: 12px; color: #E5E7EB; text-align: left; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s; }
+    .target-btn:hover { border-color: #ff4f00; }
+    
+    .mode-toggle-btn { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #2A2A2A; background: #181818; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; }
+    .mode-toggle-btn.active { border-color: #ff4f00; background: rgba(255,79,0,0.1); }
+    
+    .toggle-switch { width: 36px; height: 20px; border-radius: 20px; background: #374151; padding: 2px; transition: background 0.2s; display: flex; align-items: center; }
+    .toggle-switch.active { background: #ff4f00; }
+    .toggle-knob { width: 16px; height: 16px; border-radius: 50%; background: #9CA3AF; transition: transform 0.2s; }
+    .toggle-switch.active .toggle-knob { transform: translateX(16px); background: white; }
+
+    .chats-list-container { flex: 1; overflow-y: auto; padding: 0 16px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #2A2A2A; margin-top: 8px; padding-top: 12px; }
+    
+    .chat-history-row { display: flex; align-items: center; justify-content: space-between; border-radius: 8px; transition: background 0.2s; }
+    .chat-history-row:hover { background: #1A1A1A; }
+    .chat-history-row.active { background: rgba(255,79,0,0.15); border: 1px solid rgba(255,79,0,0.3); }
+
+    .chat-history-item { flex: 1; font-size: 12px; padding: 8px 10px; color: #9CA3AF; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-history-row.active .chat-history-item { color: #ff7333; font-weight: 600; }
+    
+    .delete-chat-btn { background: none; border: none; color: #6B7280; font-size: 13px; padding: 4px 8px; cursor: pointer; transition: color 0.2s; }
+    .delete-chat-btn:hover { color: #EF4444; }
+
+    .sidebar-footer { padding: 16px; border-top: 1px solid #2A2A2A; background: #0E0E0E; display: flex; flex-direction: column; gap: 12px; }
+    .model-status { display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981; }
+    
+    .btn-secondary { width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,79,0,0.1); border: 1px solid rgba(255,79,0,0.3); color: #ff7333; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.2s; }
+    .btn-secondary:hover { background: rgba(255,79,0,0.2); }
+    
+    .top-bar { height: 56px; border-bottom: 1px solid #2A2A2A; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: rgba(14,14,14,0.8); }
+    .chat-area { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 860px; width: 100%; margin: 0 auto; }
+    
+    .msg-card { display: flex; gap: 16px; padding: 20px; border-radius: 16px; border: 1px solid #2A2A2A; background: #141414; }
+    .msg-card.user { background: #181818; margin-left: 48px; }
+    .msg-card.assistant { background: #121212; margin-right: 48px; }
+    .msg-avatar { width: 32px; height: 32px; border-radius: 8px; background: #ff4f00; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: 12px; flex-shrink: 0; }
+    .msg-avatar.user-av { background: #4B5563; }
+    .msg-content { flex: 1; font-size: 14px; line-height: 1.6; color: #D1D5DB; }
+    .msg-meta { font-size: 11px; font-weight: 600; color: #ff7333; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    
+    .input-container { padding: 16px; border-top: 1px solid #2A2A2A; background: #0E0E0E; max-width: 860px; width: 100%; margin: 0 auto; }
+    .input-wrapper { position: relative; display: flex; align-items: center; }
+    .chat-textarea { width: 100%; background: #181818; border: 1px solid #2A2A2A; border-radius: 16px; padding: 14px 50px 14px 16px; font-size: 14px; color: white; resize: none; outline: none; transition: border-color 0.2s; }
+    .chat-textarea:focus { border-color: #ff4f00; }
+    .send-btn { position: absolute; right: 10px; width: 36px; height: 36px; border-radius: 10px; background: #ff4f00; border: none; color: white; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .send-btn:hover { background: #e04500; }
+    
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .modal-box { background: #141414; border: 1px solid #2A2A2A; border-radius: 16px; max-width: 440px; width: 100%; padding: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2A2A2A; padding-bottom: 12px; font-weight: bold; font-size: 14px; color: white; }
+    .close-btn { background: none; border: none; color: #9CA3AF; font-size: 18px; cursor: pointer; }
+    .close-btn:hover { color: white; }
+    
+    .form-select, .form-input { width: 100%; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 10px; padding: 10px; font-size: 13px; color: white; outline: none; margin-top: 6px; }
+    .btn-primary { width: 100%; padding: 10px; border-radius: 10px; background: #ff4f00; border: none; color: white; font-size: 13px; font-weight: bold; cursor: pointer; }
+    .btn-primary:hover { background: #e04500; }
+    
+    .slide-panel { position: fixed; top: 0; bottom: 0; right: 0; width: 440px; background: #0A0A0A; border-left: 1px solid #2A2A2A; z-index: 50; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; box-shadow: -10px 0 25px rgba(0,0,0,0.5); }
+    .slide-panel.open { transform: translateX(0); }
+    .tree-container { flex: 1; overflow-y: auto; padding: 16px; background: #0E0E0E; }
+    .tree-item { font-size: 12px; padding: 8px 12px; border-radius: 6px; color: #D1D5DB; cursor: pointer; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .tree-item:hover { background: #1E1E1E; color: white; }
+    .tree-item.file { color: #60A5FA; font-family: monospace; }
+    .tree-item.folder { color: #F59E0B; font-weight: 600; }
+    
+    .hidden { display: none !important; }
   </style>
 </head>
-<body class="bg-[#0A0A0A] text-gray-100 font-sans h-screen flex overflow-hidden antialiased selection:bg-[#ff4f00] selection:text-white">
+<body>
 
-  <!-- ================= SIDEBAR ================= -->
-  <aside class="w-80 bg-[#121212] border-r border-brand-border flex flex-col justify-between flex-shrink-0 z-20">
-    <!-- Top Branding -->
+  <sidebar>
     <div>
-      <div class="p-5 border-b border-brand-border flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#ff4f00] to-[#b33600] flex items-center justify-center font-bold text-white shadow-lg shadow-[#ff4f00]/20">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-          </div>
+      <div class="brand-header">
+        <div class="brand-left">
+          <div class="brand-logo">IT</div>
           <div>
-            <h1 class="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
+            <div class="brand-title">
               Itiers Copilot
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-[#ff4f00]/20 text-[#ff4f00] font-semibold border border-[#ff4f00]/30">Harness</span>
-            </h1>
-            <p class="text-[11px] text-gray-400">Practicante 3 · Stefano Ferro</p>
+              <span class="brand-tag">Harness</span>
+            </div>
           </div>
         </div>
+        <button onclick="createNewChat()" class="new-chat-btn" title="Nuevo Chat">＋</button>
       </div>
 
-      <!-- New Chat Button -->
-      <div class="p-4">
-        <button onclick="newChat()" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-brand-surface hover:bg-[#262626] border border-brand-border text-sm font-medium transition-all duration-200 hover:border-gray-600 shadow-sm">
-          <svg class="w-4 h-4 text-[#ff4f00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
-          Nueva Conversación
-        </button>
-      </div>
-
-      <!-- Quick Harness Controls -->
-      <div class="px-4 space-y-4">
+      <div class="widget-box" style="padding-bottom: 8px;">
         <div>
-          <label class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block mb-2 px-1">
-            Componente Objetivo
-          </label>
-          <select id="componentSelect" class="w-full bg-[#181818] border border-brand-border rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-[#ff4f00] transition-colors">
-            <option value="components/Header.tsx">components/Header.tsx</option>
-            <option value="components/Hero.tsx">components/Hero.tsx</option>
-            <option value="components/Footer.tsx">components/Footer.tsx</option>
-            <option value="components/MetricCard.tsx">components/MetricCard.tsx</option>
-            <option value="components/ImpactCounters.tsx">components/ImpactCounters.tsx</option>
-            <option value="components/ContactSection.tsx">components/ContactSection.tsx</option>
-            <option value="components/CareersSection.tsx">components/CareersSection.tsx</option>
-            <option value="components/DataAISection.tsx">components/DataAISection.tsx</option>
-            <option value="components/TeamCarousel.tsx">components/TeamCarousel.tsx</option>
-            <option value="app/es/page.tsx">app/es/page.tsx</option>
-          </select>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="grid grid-cols-2 gap-2">
-          <button onclick="triggerAudit()" class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#181818] hover:bg-[#252525] border border-brand-border text-xs font-medium text-gray-200 transition-colors">
-            <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            Auditar QA
-          </button>
-          <button onclick="triggerRepair()" class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#ff4f00]/10 hover:bg-[#ff4f00]/20 border border-[#ff4f00]/40 text-xs font-medium text-[#ff7333] transition-colors">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-            </svg>
-            Auto-Reparar
+          <span class="widget-label">Objetivo Actual (Seleccionar Archivo)</span>
+          <button onclick="openFileExplorer()" class="target-btn">
+            <span id="targetDisplay" style="font-family: monospace; color: #ff7333;">Ninguno seleccionado</span>
+            <span>📁</span>
           </button>
         </div>
 
-        <!-- Undo Button -->
-        <button onclick="triggerUndo()" class="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#1C1C1C] hover:bg-[#262626] border border-brand-border text-xs font-medium text-amber-300 transition-all hover:border-amber-500/40 shadow-sm">
-          <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2m0 0l-4-4m4 4l4-4M3 10l4-4M3 10l4 4"/>
-          </svg>
-          ↩️ Deshacer Último Cambio (Undo)
-        </button>
-
-        <!-- Other Suite Tools -->
-        <div class="pt-2 border-t border-brand-border space-y-1.5">
-          <button onclick="triggerSDD()" class="w-full flex items-center justify-between py-2 px-3 rounded-lg hover:bg-[#1E1E1E] text-xs text-gray-300 transition-colors">
-            <span class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-              </svg>
-              Verificación SDD (tasks.md)
-            </span>
-            <span class="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">Specs</span>
-          </button>
-
-          <button onclick="triggerGEO()" class="w-full flex items-center justify-between py-2 px-3 rounded-lg hover:bg-[#1E1E1E] text-xs text-gray-300 transition-colors">
-            <span class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-              </svg>
-              Auditoría SEO & GEO
-            </span>
-            <span class="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">Answer-First</span>
-          </button>
-
-          <button onclick="triggerVerifyHarness()" class="w-full flex items-center justify-between py-2 px-3 rounded-lg hover:bg-[#1E1E1E] text-xs text-gray-300 transition-colors">
-            <span class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-              </svg>
-              Guardrails Zod & Tipos
-            </span>
-            <span class="text-[10px] bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded">CI/CD</span>
+        <div>
+          <button type="button" id="sidebarEditToggle" onclick="toggleEditMode()" class="mode-toggle-btn">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span id="sidebarEditIcon" style="font-size: 16px;">💬</span>
+              <div style="text-align: left;">
+                <div id="sidebarEditTitle" style="font-size: 12px; font-weight: bold; color: #E5E7EB;">Modo Consulta</div>
+                <div id="sidebarEditSub" style="font-size: 10px; color: #9CA3AF;">Sólo lectura y análisis</div>
+              </div>
+            </div>
+            <div id="sidebarEditSwitch" class="toggle-switch">
+              <div id="sidebarEditKnob" class="toggle-knob"></div>
+            </div>
           </button>
         </div>
       </div>
+
+      <div style="padding: 0 16px;"><span class="widget-label">Historial de Chats</span></div>
+      <div id="chatsListContainer" class="chats-list-container"></div>
     </div>
 
-    <!-- Bottom User / Model Card -->
-    <div class="p-4 border-t border-brand-border bg-[#0E0E0E]">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-          <div>
-            <div id="modelBadge" class="text-xs font-semibold text-white">Gemini 3.5 Flash</div>
-            <div class="text-[10px] text-emerald-400">Online · Modo Cloud Activo</div>
-          </div>
+    <div class="sidebar-footer">
+      <div class="model-status">
+        <div id="statusDot" class="status-dot"></div>
+        <div>
+          <div id="modelBadge" style="font-size: 12px; font-weight: 600; color: white;">Gemini / Ollama</div>
+          <div id="statusSubtext" style="font-size: 10px; color: #9CA3AF;">Modelo Activo</div>
         </div>
-        <button onclick="toggleOllama()" title="Alternar Ollama Local vs Cloud" class="p-1.5 rounded-lg bg-brand-surface hover:bg-brand-border text-gray-300 transition-colors text-[11px] font-mono">
-          /ollama
-        </button>
       </div>
+      <button onclick="openKeySelectorModal()" class="btn-secondary">
+        🔑 Seleccionar Modelo / API Key
+      </button>
     </div>
-  </aside>
+  </sidebar>
 
-  <!-- ================= MAIN CHAT AREA ================= -->
-  <main class="flex-1 flex flex-col h-full bg-[#0A0A0A] relative">
-    
-    <!-- Top Header -->
-    <header class="h-14 border-b border-brand-border flex items-center justify-between px-6 bg-[#0E0E0E]/80 backdrop-blur z-10">
-      <div class="flex items-center gap-3">
-        <span class="text-sm font-medium text-gray-300">Chat Asistente & Ingeniería de Arneses</span>
-        <span class="text-xs text-gray-500">|</span>
-        <span class="text-xs text-gray-400">Spec-Driven Development</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <button onclick="window.open('http://localhost:3000', '_blank')" class="text-xs py-1.5 px-3 rounded-lg bg-brand-surface hover:bg-[#252525] border border-brand-border text-gray-300 flex items-center gap-1.5 transition-colors">
-          <span>Abrir Web en Vivo (localhost:3000)</span>
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-        </button>
-      </div>
+  <main>
+    <header class="top-bar">
+      <span style="font-size: 13px; font-weight: 500; color: #D1D5DB;">Itiers AI Copilot — Libertad Total de Edición y Diseño</span>
+      <button id="webBtn" onclick="handleWebClick()" style="padding: 6px 12px; border-radius: 8px; background: #1E1E1E; border: 1px solid #2A2A2A; color: white; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <span id="webDot" style="width: 8px; height: 8px; border-radius: 50%; background: #6B7280; display: inline-block;"></span>
+        <span id="webText">🌐 Iniciar y Abrir Web (localhost:3000)</span>
+      </button>
     </header>
 
-    <!-- Messages Container -->
-    <div id="chatContainer" class="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl w-full mx-auto">
-      
-      <!-- Welcome Message -->
-      <div class="flex gap-4 p-5 rounded-2xl bg-[#141414] border border-brand-border shadow-sm">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ff4f00] to-[#b33600] flex-shrink-0 flex items-center justify-center font-bold text-white text-xs">
-          IT
-        </div>
-        <div class="space-y-3 flex-1">
-          <div class="flex items-center justify-between">
-            <span class="text-sm font-bold text-white">Itiers AI Copilot</span>
-            <span class="text-[11px] text-gray-400">Sistema Activo</span>
-          </div>
-          <p class="text-sm text-gray-300 leading-relaxed">
-            ¡Hola Stefano! Soy tu arnés de inteligencia artificial corporativo. Estoy conectado al proyecto de <strong>Itiers</strong> con soporte multi-proveedor (Gemini 3.5 Flash, Groq y Ollama local).
-          </p>
-          <div class="grid grid-cols-2 gap-2.5 pt-2">
-            <button onclick="quickPrompt('Audita la accesibilidad WCAG AA y estándares de components/Header.tsx')" class="text-left p-3 rounded-xl bg-[#1A1A1A] hover:bg-[#222222] border border-brand-border text-xs text-gray-300 transition-colors">
-              <span class="font-semibold text-white block mb-0.5">🔍 Auditar Header</span>
-              Revisa accesibilidad WCAG AA y semántica.
-            </button>
-            <button onclick="quickPrompt('Revisa la sección Hero en components/Hero.tsx y recomienda mejoras visuales según specs/design.md')" class="text-left p-3 rounded-xl bg-[#1A1A1A] hover:bg-[#222222] border border-brand-border text-xs text-gray-300 transition-colors">
-              <span class="font-semibold text-white block mb-0.5">💡 Mejorar Hero Section</span>
-              Sugerencias de diseño con Tailwind y manual de marca.
-            </button>
-          </div>
-        </div>
+    <div id="chatContainer" class="chat-area"></div>
+
+    <div class="input-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span id="chatEditLabel" style="font-size: 11px; font-weight: bold; color: #9CA3AF;">💬 Modo Consulta (Lectura)</span>
+        <span id="targetInputBadge" style="font-family: monospace; font-size: 11px; color: #ff7333;">Ningún archivo seleccionado</span>
       </div>
 
-    </div>
-
-    <!-- Input Bar -->
-    <div class="p-4 border-t border-brand-border bg-[#0E0E0E]/90 backdrop-blur max-w-4xl w-full mx-auto">
-      <form id="chatForm" onsubmit="sendMessage(event)" class="relative flex items-center">
-        <textarea 
-          id="messageInput" 
-          rows="1" 
-          placeholder="Escribe un mensaje, comando (/auditar, /reparar, /geo) o consulta técnica..." 
-          onkeydown="handleKey(event)"
-          class="w-full bg-[#181818] border border-brand-border rounded-2xl pl-4 pr-14 py-3.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#ff4f00] transition-colors resize-none shadow-inner"
-        ></textarea>
-        <button 
-          type="submit" 
-          id="sendBtn"
-          class="absolute right-2.5 top-2.5 bottom-2.5 w-10 h-10 rounded-xl bg-[#ff4f00] hover:bg-[#e04500] text-white flex items-center justify-center transition-all shadow-md shadow-[#ff4f00]/20 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-          </svg>
-        </button>
+      <form onsubmit="sendMessage(event)" class="input-wrapper">
+        <textarea id="messageInput" rows="1" placeholder="Escribe tu solicitud de diseño, cambios o consultas..." onkeydown="handleKey(event)" class="chat-textarea"></textarea>
+        <button type="submit" id="sendBtn" class="send-btn">➔</button>
       </form>
-      <div class="flex items-center justify-between text-[11px] text-gray-500 mt-2 px-1">
-        <span>Presiona <strong>Enter</strong> para enviar, <strong>Shift + Enter</strong> para nueva línea</span>
-        <span>Itiers Data Sense · 20 Años de Maestría en Datos</span>
-      </div>
     </div>
-
   </main>
 
-  <!-- ================= SCRIPTS ================= -->
-  <script>
-    const chatContainer = document.getElementById('chatContainer');
-    const messageInput = document.getElementById('messageInput');
-    const sendBtn = document.getElementById('sendBtn');
-    const componentSelect = document.getElementById('componentSelect');
-    const modelBadge = document.getElementById('modelBadge');
-
-    function appendMessage(role, content, isHtml = false) {
-      const isUser = role === 'user';
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `flex gap-4 p-5 rounded-2xl ${isUser ? 'bg-[#181818] border border-brand-border ml-12' : 'bg-[#121212] border border-brand-border mr-12'}`;
-      
-      const avatar = isUser
-        ? `<div class="w-8 h-8 rounded-lg bg-gray-700 flex-shrink-0 flex items-center justify-center font-bold text-white text-xs">Tú</div>`
-        : `<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ff4f00] to-[#b33600] flex-shrink-0 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-[#ff4f00]/20">IT</div>`;
-
-      const formattedContent = isHtml ? content : formatMarkdown(content);
-
-      msgDiv.innerHTML = `
-        ${avatar}
-        <div class="space-y-1.5 flex-1 min-w-0">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs font-semibold ${isUser ? 'text-gray-300' : 'text-[#ff7333]'}">${isUser ? 'Tú' : 'Itiers Copilot'}</span>
-            <span class="text-[10px] text-gray-400">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-          </div>
-          <div class="text-sm text-gray-200 leading-relaxed font-normal">${formattedContent}</div>
+  <!-- MODAL SELECCIÓN MODELOS / API KEYS -->
+  <div id="keySelectorModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span>🔑 Seleccionar Proveedor y Modelo de IA</span>
+        <button onclick="closeKeySelectorModal()" class="close-btn">&times;</button>
+      </div>
+      <div>
+        <label class="widget-label">Elige el Proveedor:</label>
+        <select id="modelProviderSelect" onchange="onProviderChange()" class="form-select">
+          <option value="gemini">Google Gemini API (Recomendado)</option>
+          <option value="groq">Groq API (Ultra rápido)</option>
+          <option value="openai">OpenAI GPT-4o</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="ollama">Ollama Local (100% Privado / Sin Internet)</option>
+        </select>
+        <div id="apiKeyFieldContainer" style="margin-top: 10px;">
+          <label class="widget-label">API Key del Proveedor:</label>
+          <input type="password" id="modalApiKeyInput" placeholder="Pega tu clave API aquí..." class="form-input">
         </div>
-      `;
-      chatContainer.appendChild(msgDiv);
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button onclick="saveApiKeyModal()" class="btn-primary">Guardar y Conectar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Explorador de Archivos Slide Panel -->
+  <div id="fileExplorerOverlay" onclick="closeFileExplorer()" class="modal-overlay hidden" style="background: rgba(0,0,0,0.5);"></div>
+  <div id="fileExplorerPanel" class="slide-panel">
+    <div class="modal-header" style="padding: 16px; background: #121212;">
+      <span>📁 Seleccionar Archivo Objetivo (Código)</span>
+      <button onclick="closeFileExplorer()" class="close-btn">&times;</button>
+    </div>
+    <div class="tree-container" id="fileTreeContainer"></div>
+  </div>
+
+  <script>
+    let globalSelectedTarget = "";
+    let isEditModeActive = false;
+    let isServerRunning = false;
+    let isStartingServer = false;
+
+    async function loadChats() {
+      const res = await fetch('/api/chats');
+      const data = await res.json();
+      renderChatsList(data);
+    }
+
+    function renderChatsList(db) {
+      const container = document.getElementById('chatsListContainer');
+      container.innerHTML = '';
+      
+      const chatIds = Object.keys(db.chats).reverse();
+      chatIds.forEach(id => {
+        const chat = db.chats[id];
+        
+        const row = document.createElement('div');
+        row.className = `chat-history-row ${id === db.active_id ? 'active' : ''}`;
+        
+        const item = document.createElement('div');
+        item.className = 'chat-history-item';
+        item.innerText = chat.title || "Chat sin título";
+        item.onclick = () => switchChat(id);
+        
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-chat-btn';
+        delBtn.innerHTML = '🗑️';
+        delBtn.title = 'Eliminar chat';
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          deleteChat(id);
+        };
+        
+        row.appendChild(item);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+
+      const activeChat = db.chats[db.active_id];
+      const chatContainer = document.getElementById('chatContainer');
+      chatContainer.innerHTML = '';
+      if (activeChat && activeChat.messages) {
+        activeChat.messages.forEach(m => {
+          appendMessageUI(m.role === 'user' ? 'user' : 'assistant', m.text, false);
+        });
+      }
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    function formatMarkdown(text) {
-      if (!text) return '';
-      // Escape HTML
-      let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      
-      // Code blocks ```lang ... ```
-      escaped = escaped.replace(/```([a-zA-Z0-9]*)\\n([\\s\\S]*?)```/g, function(match, lang, code) {
-        return `<div class="my-3 rounded-xl overflow-hidden border border-[#2D2D2D] bg-[#080808]">
-          <div class="flex items-center justify-between px-3 py-1.5 bg-[#171717] border-b border-[#2D2D2D] text-[11px] text-gray-400 font-mono">
-            <span>${lang || 'código'}</span>
-            <button onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); this.innerText='¡Copiado!';" class="hover:text-white transition-colors">Copiar</button>
-          </div>
-          <pre class="p-3 text-xs font-mono text-emerald-400 overflow-x-auto">${code.trim()}</pre>
-        </div>`;
+    async function createNewChat() {
+      const res = await fetch('/api/chats/new', { method: 'POST' });
+      const data = await res.json();
+      renderChatsList(data);
+    }
+
+    async function switchChat(chatId) {
+      const res = await fetch('/api/chats/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId })
       });
+      const data = await res.json();
+      renderChatsList(data);
+    }
 
-      // Inline code
-      escaped = escaped.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-[#202020] text-[#ff7333] font-mono text-xs">$1</code>');
-      
-      // Bold
-      escaped = escaped.replace(/\\*\\*(.*?)\\*\\*/g, '<strong class="font-semibold text-white">$1</strong>');
-      
-      // Line breaks
-      escaped = escaped.replace(/\\n/g, '<br/>');
+    async function deleteChat(chatId) {
+      if (!confirm("¿Estás seguro de que deseas eliminar este chat?")) return;
+      const res = await fetch('/api/chats/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId })
+      });
+      const data = await res.json();
+      renderChatsList(data);
+    }
 
-      return escaped;
+    function toggleEditMode() {
+      if (!globalSelectedTarget && !isEditModeActive) {
+        alert("⚠️ Por favor selecciona primero un archivo en la barra lateral antes de activar el Modo Edición.");
+        openFileExplorer();
+        return;
+      }
+      isEditModeActive = !isEditModeActive;
+      updateEditModeUi();
+    }
+
+    function updateEditModeUi() {
+      const chatLabel = document.getElementById('chatEditLabel');
+      const sideTitle = document.getElementById('sidebarEditTitle');
+      const sideSub = document.getElementById('sidebarEditSub');
+      const sideSwitch = document.getElementById('sidebarEditSwitch');
+      const sideToggle = document.getElementById('sidebarEditToggle');
+
+      if (isEditModeActive) {
+        if (chatLabel) { chatLabel.innerText = "⚡ Modo Edición ACTIVO"; chatLabel.style.color = "#ff7333"; }
+        if (sideTitle) { sideTitle.innerText = "Modo Edición ACTIVO"; sideTitle.style.color = "#ff7333"; }
+        if (sideSub) { sideSub.innerText = "Modifica código directamente"; sideSub.style.color = "#ff7333"; }
+        if (sideSwitch) sideSwitch.classList.add('active');
+        if (sideToggle) sideToggle.classList.add('active');
+      } else {
+        if (chatLabel) { chatLabel.innerText = "💬 Modo Consulta (Lectura)"; chatLabel.style.color = "#9CA3AF"; }
+        if (sideTitle) { sideTitle.innerText = "Modo Consulta"; sideTitle.style.color = "#E5E7EB"; }
+        if (sideSub) { sideSub.innerText = "Sólo lectura y análisis"; sideSub.style.color = "#9CA3AF"; }
+        if (sideSwitch) sideSwitch.classList.remove('active');
+        if (sideToggle) sideToggle.classList.remove('active');
+      }
+    }
+
+    function openKeySelectorModal() { document.getElementById('keySelectorModal').classList.remove('hidden'); }
+    function closeKeySelectorModal() { document.getElementById('keySelectorModal').classList.add('hidden'); }
+
+    function onProviderChange() {
+      const prov = document.getElementById('modelProviderSelect').value;
+      document.getElementById('apiKeyFieldContainer').style.display = prov === 'ollama' ? 'none' : 'block';
+    }
+
+    async function saveApiKeyModal() {
+      const prov = document.getElementById('modelProviderSelect').value;
+      const key = document.getElementById('modalApiKeyInput').value.trim();
+      if (prov !== 'ollama' && !key) { alert("Ingresa una clave válida."); return; }
+
+      const res = await fetch('/api/set_key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: prov, key: key })
+      });
+      const data = await res.json();
+      alert(data.message);
+      closeKeySelectorModal();
+    }
+
+    function openFileExplorer() {
+      document.getElementById('fileExplorerOverlay').classList.remove('hidden');
+      document.getElementById('fileExplorerPanel').classList.add('open');
+      const container = document.getElementById('fileTreeContainer');
+      container.innerHTML = '<div style="color: #9CA3AF; padding: 10px;">Escaneando archivos del proyecto...</div>';
+      
+      fetch('/api/fs/tree').then(res => res.json()).then(data => {
+        container.innerHTML = '';
+        buildFlatFileList(data.tree, container);
+      }).catch(err => {
+        container.innerHTML = '<div style="color: red; padding: 10px;">Error cargando archivos.</div>';
+      });
+    }
+
+    function closeFileExplorer() {
+      document.getElementById('fileExplorerOverlay').classList.add('hidden');
+      document.getElementById('fileExplorerPanel').classList.remove('open');
+    }
+
+    function buildFlatFileList(nodes, container) {
+      nodes.forEach(node => {
+        if (node.type === 'file') {
+          const item = document.createElement('div');
+          item.className = "tree-item file";
+          item.innerHTML = `<span>📄</span><span>${node.path}</span>`;
+          item.onclick = (e) => {
+            e.stopPropagation();
+            globalSelectedTarget = node.path;
+            document.getElementById('targetDisplay').innerText = globalSelectedTarget;
+            document.getElementById('targetInputBadge').innerText = globalSelectedTarget;
+            closeFileExplorer();
+          };
+          container.appendChild(item);
+        } else if (node.type === 'folder' && node.children && node.children.length > 0) {
+          const header = document.createElement('div');
+          header.className = "tree-item folder";
+          header.innerHTML = `<span>📁</span><span>${node.name}/</span>`;
+          container.appendChild(header);
+          
+          const subContainer = document.createElement('div');
+          subContainer.style.paddingLeft = '14px';
+          container.appendChild(subContainer);
+          buildFlatFileList(node.children, subContainer);
+        }
+      });
+    }
+
+    async function checkDevStatus() {
+      try {
+        const res = await fetch('/api/dev_status');
+        const data = await res.json();
+        isServerRunning = data.running;
+        updateDevUi(data.running);
+      } catch (e) {}
+    }
+
+    function updateDevUi(running) {
+      const dot = document.getElementById('webDot');
+      const text = document.getElementById('webText');
+      if (!dot || !text) return;
+
+      if (running) {
+        dot.style.background = "#10B981";
+        dot.style.boxShadow = "0 0 8px #10B981";
+        text.innerText = "🌐 Abrir Web en Vivo (localhost:3000)";
+      } else {
+        dot.style.background = "#6B7280";
+        dot.style.boxShadow = "none";
+        text.innerText = "🌐 Iniciar y Abrir Web (localhost:3000)";
+      }
+    }
+
+    async function handleWebClick() {
+      if (isServerRunning) {
+        window.open('http://localhost:3000', '_blank');
+        return;
+      }
+
+      if (isStartingServer) return;
+      isStartingServer = true;
+
+      const text = document.getElementById('webText');
+      const dot = document.getElementById('webDot');
+      if (text) text.innerText = "Iniciando Next.js (npm run dev)...";
+      if (dot) { dot.style.background = "#F59E0B"; dot.style.boxShadow = "0 0 8px #F59E0B"; }
+
+      try {
+        const res = await fetch('/api/dev_start', { method: 'POST' });
+        const data = await res.json();
+        isStartingServer = false;
+        if (data.running) {
+          isServerRunning = true;
+          updateDevUi(true);
+          window.open('http://localhost:3000', '_blank');
+        } else {
+          updateDevUi(false);
+          alert('Aviso del servidor: ' + data.message);
+        }
+      } catch (e) {
+        isStartingServer = false;
+        updateDevUi(false);
+        alert('Error al levantar servidor: ' + e);
+      }
     }
 
     async function sendMessage(e) {
       if (e) e.preventDefault();
-      const text = messageInput.value.trim();
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
       if (!text) return;
 
-      appendMessage('user', text);
-      messageInput.value = '';
-      sendBtn.disabled = true;
+      if (isEditModeActive && !globalSelectedTarget) {
+        alert("⚠️ Debes seleccionar un archivo objetivo antes de aplicar cambios en Modo Edición.");
+        openFileExplorer();
+        return;
+      }
 
-      // Loading indicator
-      const loadingId = 'loading-' + Date.now();
-      const loadingDiv = document.createElement('div');
-      loadingDiv.id = loadingId;
-      loadingDiv.className = 'flex gap-4 p-5 rounded-2xl bg-[#121212] border border-brand-border mr-12 animate-pulse';
-      const isEditAction = /^\/(crear|modificar|editar|cambiar|reparar)/i.test(text) || /^(cambia|modifica|edita|crea|agrega|elimina|actualiza)/i.test(text);
-      const loadingText = isEditAction 
-        ? 'Itiers Copilot está modificando el código y verificando con TypeScript...' 
-        : 'Itiers Copilot está analizando...';
+      appendMessageUI('user', text, true);
+      input.value = '';
 
-      loadingDiv.innerHTML = `
-        <div class="w-8 h-8 rounded-lg bg-[#ff4f00]/30 flex items-center justify-center text-xs font-bold text-white">IT</div>
-        <div class="text-sm text-gray-400 flex items-center gap-2">
-          <span>${loadingText}</span>
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, target_file: globalSelectedTarget, edit_mode: isEditModeActive })
+      });
+      const data = await res.json();
+      renderChatsList(data.db);
+    }
+
+    function appendMessageUI(role, text, scrollToBottom = true) {
+      const chat = document.getElementById('chatContainer');
+      const div = document.createElement('div');
+      div.className = `msg-card ${role}`;
+      div.innerHTML = `
+        <div class="msg-avatar ${role === 'user' ? 'user-av' : ''}">${role === 'user' ? 'Tú' : 'IT'}</div>
+        <div class="msg-content">
+          <div class="msg-meta"><span>${role === 'user' ? 'Tú' : 'Itiers Copilot'}</span></div>
+          <p>${text.replace(/\\n/g, '<br/>')}</p>
         </div>
       `;
-      chatContainer.appendChild(loadingDiv);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            message: text,
-            target_file: componentSelect.value 
-          })
-        });
-        const data = await res.json();
-        document.getElementById(loadingId)?.remove();
-        appendMessage('assistant', data.reply || 'Sin respuesta.');
-      } catch (err) {
-        document.getElementById(loadingId)?.remove();
-        appendMessage('assistant', '❌ Error comunicando con el arnés: ' + err);
-      } finally {
-        sendBtn.disabled = false;
-        messageInput.focus();
+      chat.appendChild(div);
+      if (scrollToBottom) {
+        chat.scrollTop = chat.scrollHeight;
       }
     }
 
-    function handleKey(e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    }
+    function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 
-    function quickPrompt(text) {
-      messageInput.value = text;
-      sendMessage();
-    }
-
-    function newChat() {
-      chatContainer.innerHTML = '';
-      appendMessage('assistant', 'Conversación reiniciada. ¿Qué componente deseas inspeccionar o crear hoy?');
-    }
-
-    async function triggerAudit() {
-      const file = componentSelect.value;
-      appendMessage('user', 'Auditar componente: ' + file);
-      appendMessage('assistant', '🔍 Auditando <strong>' + file + '</strong> bajo especificaciones WCAG AA y marcas de Itiers...', true);
-      
-      try {
-        const res = await fetch('/api/audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filepath: file })
-        });
-        const data = await res.json();
-        appendMessage('assistant', data.report);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error al auditar: ' + err);
-      }
-    }
-
-    async function triggerRepair() {
-      const file = componentSelect.value;
-      appendMessage('user', 'Auto-reparar componente: ' + file);
-      appendMessage('assistant', '🔧 Iniciando bucle de auto-reparación autónoma para <strong>' + file + '</strong> con verificación estricta de TypeScript y Next.js...', true);
-      
-      try {
-        const res = await fetch('/api/repair', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filepath: file })
-        });
-        const data = await res.json();
-        appendMessage('assistant', data.message);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error al reparar: ' + err);
-      }
-    }
-
-    async function triggerUndo() {
-      const file = componentSelect.value;
-      appendMessage('user', 'Deshacer último cambio en: ' + file);
-      appendMessage('assistant', '↩️ Restaurando versión previa de <strong>' + file + '</strong>...', true);
-      
-      try {
-        const res = await fetch('/api/undo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filepath: file })
-        });
-        const data = await res.json();
-        appendMessage('assistant', data.message);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error al deshacer: ' + err);
-      }
-    }
-
-    async function triggerSDD() {
-      appendMessage('user', 'Ejecutar verificación SDD (tasks.md y requirements.md)');
-      try {
-        const res = await fetch('/api/sdd', { method: 'POST' });
-        const data = await res.json();
-        appendMessage('assistant', data.summary);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error en SDD: ' + err);
-      }
-    }
-
-    async function triggerGEO() {
-      const file = componentSelect.value;
-      appendMessage('user', 'Auditar optimización GEO & SEO: ' + file);
-      try {
-        const res = await fetch('/api/geo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filepath: file })
-        });
-        const data = await res.json();
-        appendMessage('assistant', data.report);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error en GEO: ' + err);
-      }
-    }
-
-    async function triggerVerifyHarness() {
-      appendMessage('user', 'Verificar Guardrails Zod y Paridad de Tipos');
-      try {
-        const res = await fetch('/api/verify', { method: 'POST' });
-        const data = await res.json();
-        appendMessage('assistant', data.output);
-      } catch (err) {
-        appendMessage('assistant', '❌ Error verificando harness: ' + err);
-      }
-    }
-
-    async function toggleOllama() {
-      try {
-        const res = await fetch('/api/toggle_ollama', { method: 'POST' });
-        const data = await res.json();
-        modelBadge.innerText = data.active_model;
-        appendMessage('assistant', '🔄 ' + data.message);
-      } catch (err) {
-        alert('Error alternando Ollama: ' + err);
-      }
-    }
+    loadChats();
+    checkDevStatus();
+    setInterval(checkDevStatus, 4000);
   </script>
 </body>
 </html>
 """
 
 class CopilotHandler(BaseHTTPRequestHandler):
-    """Maneja las peticiones HTTP y API del Copilot."""
-
-    def log_message(self, format, *args):
-        # Silenciar logs ruidosos de consola
-        pass
-
+    def log_message(self, format, *args): pass
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -530,20 +620,53 @@ class CopilotHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode("utf-8"))
 
-        elif path.startswith("/public/"):
-            rel_file = path.lstrip("/")
-            if os.path.exists(rel_file):
-                self.send_response(200)
-                if rel_file.endswith(".png"):
-                    self.send_header("Content-Type", "image/png")
-                elif rel_file.endswith(".svg"):
-                    self.send_header("Content-Type", "image/svg+xml")
-                self.end_headers()
-                with open(rel_file, "rb") as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_response(404)
-                self.end_headers()
+        elif path == "/api/chats":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(chats_db).encode("utf-8"))
+
+        elif path == "/api/dev_status":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            running = is_port_3000_open()
+            self.wfile.write(json.dumps({"running": running, "url": f"http://localhost:{DEV_PORT}"}).encode("utf-8"))
+
+        elif path == "/api/fs/tree":
+            ignore_dirs = {
+                ".git", "node_modules", ".next", "__pycache__", "out", 
+                "build", ".harness_backups", ".copilot_profile", "dist", ".vscode"
+            }
+            ignore_extensions = {".ico", ".png", ".jpg", ".jpeg", ".svg", ".lock", ".log"}
+
+            def build_tree(dir_path):
+                tree = []
+                try:
+                    for entry in sorted(os.scandir(dir_path), key=lambda e: (not e.is_dir(), e.name.lower())):
+                        name = entry.name
+                        if name in ignore_dirs or name.startswith('.'):
+                            continue
+                        
+                        rel_path = os.path.relpath(entry.path, os.getcwd()).replace("\\", "/")
+                        
+                        if entry.is_dir():
+                            children = build_tree(entry.path)
+                            if children:
+                                tree.append({"name": name, "type": "folder", "path": rel_path, "children": children})
+                        else:
+                            ext = os.path.splitext(name)[1].lower()
+                            if ext not in ignore_extensions:
+                                tree.append({"name": name, "type": "file", "path": rel_path})
+                except Exception:
+                    pass
+                return tree
+            
+            tree_data = build_tree(os.getcwd())
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"tree": tree_data}).encode("utf-8"))
         else:
             self.send_response(404)
             self.end_headers()
@@ -551,153 +674,118 @@ class CopilotHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         content_len = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
-        try:
-            data = json.loads(body)
-        except Exception:
-            data = {}
-
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
+        data = json.loads(body) if body else {}
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.end_headers()
 
         response = {}
+        global chats_db
 
-        if path == "/api/chat":
-            msg = data.get("message", "").strip()
-            selected_file = data.get("target_file")
-            msg_lower = msg.lower()
-            undo_keywords = ["deshace", "deshacer", "revertir", "revert", "undo"]
-            if any(kw in msg_lower for kw in undo_keywords):
-                target_to_revert = None
-                for word in msg.split():
-                    clean_word = word.strip(" '\"`(),;:")
-                    if "." in clean_word and any(clean_word.endswith(ext) for ext in [".tsx", ".ts", ".jsx", ".js", ".css"]):
-                        target_to_revert = clean_word
-                        break
-                if not target_to_revert and selected_file:
-                    target_to_revert = selected_file
-                ok, undo_msg = agent.revert_last_change(target_to_revert)
-                response = {"reply": f"↩️ {undo_msg}"}
-            elif agent.is_code_edit_request(msg):
-                ok, result_msg = agent.apply_code_change(msg, target_path=selected_file)
-                response = {"reply": result_msg}
-            elif msg.startswith("/auditar") or msg.startswith("auditar"):
-                parts = msg.split(maxsplit=1)
-                target = agent.resolve_project_path(parts[1].strip() if len(parts) > 1 else (selected_file or "components/Header.tsx"))
-                report = agent.audit_component(target)
-                response = {"reply": f"📊 **Reporte de Auditoría para {target}:**\n\n{report}"}
-            elif msg.startswith("/reparar") or msg.startswith("reparar"):
-                parts = msg.split(maxsplit=1)
-                target = agent.resolve_project_path(parts[1].strip() if len(parts) > 1 else (selected_file or "components/MetricCard.tsx"))
-                success = agent.auto_repair_component(target)
-                state = "Aprobado exitosamente" if success else "Finalizado con resguardo seguro"
-                response = {"reply": f"🔧 **Auto-reparación en {target}:** {state}."}
-            else:
-                reply = agent.call_llm(msg)
-                response = {"reply": reply}
+        if self.path == "/api/chats/new":
+            new_id = str(int(time.time()))
+            chats_db["active_id"] = new_id
+            chats_db["chats"][new_id] = {
+                "title": f"Chat {time.strftime('%H:%M:%S')}",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "text": "¡Nuevo chat iniciado! Selecciona un archivo en la barra lateral para continuar."
+                    }
+                ]
+            }
+            save_chats_db(chats_db)
+            response = chats_db
 
-        elif path == "/api/undo":
-            filepath = data.get("filepath")
-            success, msg = agent.revert_last_change(filepath)
-            response = {"message": f"↩️ {msg}", "success": success}
+        elif self.path == "/api/chats/switch":
+            target_id = data.get("chat_id")
+            if target_id in chats_db["chats"]:
+                chats_db["active_id"] = target_id
+                save_chats_db(chats_db)
+            response = chats_db
 
-        elif path == "/api/audit":
-            filepath = data.get("filepath", "components/Header.tsx")
-            target = agent.resolve_project_path(filepath)
-            report = agent.audit_component(target)
-            response = {"report": report, "file": target}
+        elif self.path == "/api/chats/delete":
+            target_id = data.get("chat_id")
+            if target_id in chats_db["chats"] and len(chats_db["chats"]) > 1:
+                del chats_db["chats"][target_id]
+                # Si borramos el activo, cambiamos al primero que quede disponible
+                if chats_db["active_id"] == target_id:
+                    chats_db["active_id"] = list(chats_db["chats"].keys())[-1]
+                save_chats_db(chats_db)
+            response = chats_db
 
-        elif path == "/api/repair":
-            filepath = data.get("filepath", "components/MetricCard.tsx")
-            target = agent.resolve_project_path(filepath)
-            success = agent.auto_repair_component(target)
-            state = "✅ Componente auto-reparado y validado limpiamente por TypeScript." if success else "🛡️ Rollback seguro ejecutado tras verificación de tipos."
-            response = {"message": f"Resultado de auto-reparación en {target}:\n\n{state}", "success": success}
+        elif self.path == "/api/chat":
+            msg = data.get("message", "")
+            target = data.get("target_file")
+            edit_mode = data.get("edit_mode", False)
 
-        elif path == "/api/geo":
-            filepath = data.get("filepath", "app/es/page.tsx")
-            target = agent.resolve_project_path(filepath)
-            report = agent.audit_geo(target)
-            response = {"report": report}
+            active_id = chats_db["active_id"]
+            if active_id not in chats_db["chats"]:
+                active_id = str(int(time.time()))
+                chats_db["active_id"] = active_id
+                chats_db["chats"][active_id] = {"title": "Chat Principal", "messages": []}
 
-        elif path == "/api/sdd":
-            results = agent.verify_page_seo_geo_and_requirements()
-            verified = len(results.get("verified_files", []))
-            issues = len(results.get("issues", []))
-            summary = f"📋 **Verificación SDD Completada:**\n- Archivos validados: {verified}\n- Incidencias críticas: {issues}\n- Estado: {'✅ TODO EN REGLA' if issues == 0 else '⚠️ Revisar incidencias'}"
-            response = {"summary": summary, "results": results}
+            current_chat = chats_db["chats"][active_id]
+            if len(current_chat["messages"]) <= 1:
+                current_chat["title"] = msg[:28] + ("..." if len(msg) > 28 else "")
 
-        elif path == "/api/verify":
-            res = subprocess.run("node scripts/verify-harness.js", shell=True, capture_output=True, text=True)
-            output = res.stdout if res.returncode == 0 else (res.stderr or res.stdout)
-            response = {"output": output}
+            current_chat["messages"].append({"role": "user", "text": msg})
+            reply, _, _ = agent.process_chat(msg, selected_file=target, edit_mode=edit_mode)
+            current_chat["messages"].append({"role": "assistant", "text": reply})
+            save_chats_db(chats_db)
 
-        elif path == "/api/toggle_ollama":
-            agent.prefer_ollama = not agent.prefer_ollama
-            agent.rebuild_model_priority()
-            active = [m for m in agent.available_models if m['provider'] in agent.clients]
-            active_name = active[0]['name'] if active else 'Ollama Local'
-            msg = f"Modo {'Ollama Local' if agent.prefer_ollama else 'Cloud (Gemini/Groq)'} activado."
-            response = {"active_model": active_name, "message": msg}
+            response = {"reply": reply, "db": chats_db}
+
+        elif self.path == "/api/set_key":
+            prov = data.get("provider", "gemini")
+            kval = data.get("key", "")
+            agent.set_api_key(prov, kval)
+            response = {"success": True, "message": f"✅ Proveedor {prov.upper()} configurado con éxito."}
+        elif self.path == "/api/dev_start":
+            ok, msg = start_dev_server()
+            response = {"success": ok, "message": msg, "running": is_port_3000_open()}
 
         self.wfile.write(json.dumps(response).encode("utf-8"))
 
-
 def launch_desktop_window():
-    """Abre la ventana de aplicación de escritorio sin barra de navegación."""
     url = f"http://{HOST}:{PORT}"
     time.sleep(0.8)
 
-    # 1. Intentar Microsoft Edge en modo App nativo
-    edge_paths = [
+    browser_paths = [
         shutil.which("msedge"),
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-    ]
-    for p in edge_paths:
-        if p and os.path.exists(p):
-            try:
-                subprocess.Popen([p, f"--app={url}", "--window-size=1280,850"])
-                return
-            except Exception:
-                pass
-
-    # 2. Intentar Google Chrome en modo App nativo
-    chrome_paths = [
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         shutil.which("chrome"),
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
     ]
-    for p in chrome_paths:
+
+    temp_dir = os.environ.get("TEMP", os.path.expanduser("~"))
+    profile_dir = os.path.join(temp_dir, "itiers_copilot_profile")
+
+    for p in browser_paths:
         if p and os.path.exists(p):
             try:
-                subprocess.Popen([p, f"--app={url}", "--window-size=1280,850"])
+                subprocess.Popen([
+                    p, 
+                    f"--app={url}", 
+                    f"--user-data-dir={profile_dir}", 
+                    "--disable-gpu", 
+                    "--window-size=1280,850"
+                ])
                 return
             except Exception:
                 pass
 
-    # 3. Fallback al navegador predeterminado
     import webbrowser
     webbrowser.open(url)
 
-
 def main():
     server = HTTPServer((HOST, PORT), CopilotHandler)
-    print(f"🚀 [Itiers Copilot] Servidor activo en http://{HOST}:{PORT}")
-    
-    # Lanzar la ventana de escritorio en hilo separado
+    print(f">> [Itiers Copilot] Servidor activo en http://{HOST}:{PORT}")
     threading.Thread(target=launch_desktop_window, daemon=True).start()
-
-    try:
-        server.serve_forever()
-    except (KeyboardInterrupt, SystemExit):
-        print("\n👋 Itiers Copilot detenido.")
-        server.server_close()
-
+    server.serve_forever()
 
 if __name__ == "__main__":
     main()
-
