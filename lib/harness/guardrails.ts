@@ -27,14 +27,7 @@ export const ContactFormSchema = z.object({
   name: z.string().min(2, { message: "El nombre completo debe tener al menos 2 caracteres." }),
   email: z.string().email({ message: "Debe ingresar una dirección de correo electrónico válida." }),
   company: z.string().optional(),
-  serviceOfInterest: z.enum([
-    "ingenieria",
-    "staffing",
-    "capacitaciones",
-    "general"
-  ], {
-    message: "Debe seleccionar un servicio válido."
-  }),
+  serviceOfInterest: z.string().min(1, { message: "Debe seleccionar un servicio válido." }),
   message: z.string().min(10, { message: "El mensaje debe tener al menos 10 caracteres explicativos." }),
   recaptchaToken: z.string().optional()
 });
